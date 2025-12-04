@@ -4,7 +4,6 @@ export async function POST(request: Request) {
   try {
     const body = await request.json();
     
-    // Extract message from the UI format: body.message.parts[0].text
     const messageContent = body.message?.parts?.[0]?.text || "";
 
     if (!messageContent) {
@@ -24,33 +23,33 @@ export async function POST(request: Request) {
     );
 
     const data = await response.json();
+    const text = data.answer || "Sorry, I couldn't find an answer.";
 
+    // Use the format the Vercel AI SDK expects
     const encoder = new TextEncoder();
     const stream = new ReadableStream({
-      start(controller) {
-        const text = data.answer || "Sorry, I couldn't find an answer.";
-        const words = text.split(" ");
-        let i = 0;
+      async start(controller) {
+        // Send message ID
+        controller.enqueue(encoder.encode(`f:{"messageId":"msg_${Date.now()}"}\n`));
         
-        const interval = setInterval(() => {
-          if (i < words.length) {
-            const chunk = (i === 0 ? "" : " ") + words[i];
-            controller.enqueue(encoder.encode(`0:${JSON.stringify(chunk)}\n`));
-            i++;
-          } else {
-            controller.enqueue(encoder.encode(`d:{"finishReason":"stop"}\n`));
-            controller.close();
-            clearInterval(interval);
-          }
-        }, 30);
+        // Stream text character by character
+        for (let i = 0; i < text.length; i++) {
+          controller.enqueue(encoder.encode(`0:${JSON.stringify(text[i])}\n`));
+          await new Promise(r => setTimeout(r, 10));
+        }
+        
+        // Send finish
+        controller.enqueue(encoder.encode(`e:{"finishReason":"stop","usage":{"promptTokens":0,"completionTokens":0},"isContinued":false}\n`));
+        controller.enqueue(encoder.encode(`d:{"finishReason":"stop","usage":{"promptTokens":0,"completionTokens":0}}\n`));
+        
+        controller.close();
       },
     });
 
     return new Response(stream, {
       headers: {
-        "Content-Type": "text/event-stream",
-        "Cache-Control": "no-cache",
-        Connection: "keep-alive",
+        "Content-Type": "text/plain; charset=utf-8",
+        "X-Vercel-AI-Data-Stream": "v1",
       },
     });
   } catch (error) {
