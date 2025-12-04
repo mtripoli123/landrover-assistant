@@ -3,12 +3,9 @@ export const maxDuration = 60;
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    console.log("Request body:", JSON.stringify(body));
     
-    // Handle different possible formats
-    const messages = body.messages || [];
-    const lastMessage = messages[messages.length - 1] || body.message || body;
-    const messageContent = lastMessage.content || lastMessage.message || lastMessage;
+    // Extract message from the UI format: body.message.parts[0].text
+    const messageContent = body.message?.parts?.[0]?.text || "";
 
     if (!messageContent) {
       return new Response("No message provided", { status: 400 });
@@ -20,22 +17,18 @@ export async function POST(request: Request) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          message: typeof messageContent === 'string' ? messageContent : JSON.stringify(messageContent),
-          conversation_history: messages.slice(0, -1).map((m: any) => ({
-            role: m.role,
-            content: m.content,
-          })),
+          message: messageContent,
+          conversation_history: [],
         }),
       }
     );
 
     const data = await response.json();
-    console.log("Backend response:", JSON.stringify(data));
 
     const encoder = new TextEncoder();
     const stream = new ReadableStream({
       start(controller) {
-        const text = data.answer || data.detail || "Sorry, I couldn't find an answer.";
+        const text = data.answer || "Sorry, I couldn't find an answer.";
         const words = text.split(" ");
         let i = 0;
         
