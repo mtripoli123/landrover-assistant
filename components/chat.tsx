@@ -195,7 +195,6 @@ export function Chat({
               chatId={id}
               input={input}
               messages={messages}
-              onModelChange={setCurrentModelId}
               selectedModelId={currentModelId}
               selectedVisibilityType={visibilityType}
               sendMessage={sendMessage}

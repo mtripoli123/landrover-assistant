@@ -27,20 +27,30 @@ export async function POST(request: Request) {
 
     // Use the format the Vercel AI SDK expects
     const encoder = new TextEncoder();
+    const messageId = `msg_${Date.now()}`;
     const stream = new ReadableStream({
       async start(controller) {
         // Send message ID
-        controller.enqueue(encoder.encode(`f:{"messageId":"msg_${Date.now()}"}\n`));
+        controller.enqueue(encoder.encode(`f:${JSON.stringify({ messageId })}\n`));
         
-        // Stream text character by character
-        for (let i = 0; i < text.length; i++) {
-          controller.enqueue(encoder.encode(`0:${JSON.stringify(text[i])}\n`));
-          await new Promise(r => setTimeout(r, 10));
+        // Send text-start
+        controller.enqueue(encoder.encode(`0:${JSON.stringify({ type: "text-start", id: messageId })}\n`));
+        
+        // Stream text in chunks (word by word for better UX)
+        const words = text.split(/(\s+)/);
+        for (const word of words) {
+          if (word.trim() || word === " ") {
+            controller.enqueue(encoder.encode(`0:${JSON.stringify({ type: "text-delta", id: messageId, delta: word })}\n`));
+            await new Promise(r => setTimeout(r, 20));
+          }
         }
         
+        // Send text-end
+        controller.enqueue(encoder.encode(`0:${JSON.stringify({ type: "text-end", id: messageId })}\n`));
+        
         // Send finish
-        controller.enqueue(encoder.encode(`e:{"finishReason":"stop","usage":{"promptTokens":0,"completionTokens":0},"isContinued":false}\n`));
-        controller.enqueue(encoder.encode(`d:{"finishReason":"stop","usage":{"promptTokens":0,"completionTokens":0}}\n`));
+        controller.enqueue(encoder.encode(`e:${JSON.stringify({ finishReason: "stop", usage: { promptTokens: 0, completionTokens: 0 }, isContinued: false })}\n`));
+        controller.enqueue(encoder.encode(`d:${JSON.stringify({ finishReason: "stop", usage: { promptTokens: 0, completionTokens: 0 } })}\n`));
         
         controller.close();
       },
