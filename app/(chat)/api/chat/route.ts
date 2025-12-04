@@ -25,32 +25,37 @@ export async function POST(request: Request) {
     const data = await response.json();
     const text = data.answer || "Sorry, I couldn't find an answer.";
 
-    // Use the format the Vercel AI SDK expects
+    // Use Server-Sent Events format that the Vercel AI SDK expects
     const encoder = new TextEncoder();
     const messageId = `msg_${Date.now()}`;
     const stream = new ReadableStream({
       async start(controller) {
-        // Send message ID
-        controller.enqueue(encoder.encode(`f:${JSON.stringify({ messageId })}\n`));
+        // Send start-step
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "start-step" })}\n\n`));
         
         // Send text-start
-        controller.enqueue(encoder.encode(`0:${JSON.stringify({ type: "text-start", id: messageId })}\n`));
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "text-start", id: messageId })}\n\n`));
         
         // Stream text in chunks (word by word for better UX)
         const words = text.split(/(\s+)/);
         for (const word of words) {
           if (word.trim() || word === " ") {
-            controller.enqueue(encoder.encode(`0:${JSON.stringify({ type: "text-delta", id: messageId, delta: word })}\n`));
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "text-delta", id: messageId, delta: word })}\n\n`));
             await new Promise(r => setTimeout(r, 20));
           }
         }
         
         // Send text-end
-        controller.enqueue(encoder.encode(`0:${JSON.stringify({ type: "text-end", id: messageId })}\n`));
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "text-end", id: messageId })}\n\n`));
+        
+        // Send finish-step
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "finish-step" })}\n\n`));
         
         // Send finish
-        controller.enqueue(encoder.encode(`e:${JSON.stringify({ finishReason: "stop", usage: { promptTokens: 0, completionTokens: 0 }, isContinued: false })}\n`));
-        controller.enqueue(encoder.encode(`d:${JSON.stringify({ finishReason: "stop", usage: { promptTokens: 0, completionTokens: 0 } })}\n`));
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "finish" })}\n\n`));
+        
+        // Send done
+        controller.enqueue(encoder.encode("data: [DONE]\n\n"));
         
         controller.close();
       },
@@ -58,8 +63,9 @@ export async function POST(request: Request) {
 
     return new Response(stream, {
       headers: {
-        "Content-Type": "text/plain; charset=utf-8",
-        "X-Vercel-AI-Data-Stream": "v1",
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache",
+        "Connection": "keep-alive",
       },
     });
   } catch (error) {
